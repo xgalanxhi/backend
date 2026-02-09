@@ -40,3 +40,117 @@ jobs:
           DESTINATION: ${{ vars.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ vars.DOCKERHUB_REPO }}:${{ cloudbees.version }}
         run: |
           echo "artifact ID for '${DESTINATION}': ${{ fromJSON(steps.kaniko-build.outputs.artifact-ids)[env.DESTINATION] }}"
+
+      - name: Deploy to ECS (register new task definition)
+        uses: docker://alpine:3.20
+        shell: sh
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_REGION }}
+          ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+          ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+          ECS_CONTAINER_NAME: ${{ vars.ECS_CONTAINER_NAME }}
+          IMAGE: ${{ vars.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ vars.DOCKERHUB_REPO }}:${{ cloudbees.version }}
+        run: |
+          set -eu
+
+          : "${AWS_DEFAULT_REGION:?Set vars.AWS_REGION}"
+          : "${ECS_SERVICE:?Set vars.ECS_SERVICE (name or ARN)}"
+          : "${IMAGE:?IMAGE is required}"
+
+          # If cluster wasn't provided, try deriving it from the service ARN.
+          # Example: arn:aws:ecs:REGION:ACCT:service/cluster-name/service-name
+          if [ -z "${ECS_CLUSTER:-}" ]; then
+            if echo "${ECS_SERVICE}" | grep -q ':service/'; then
+              ECS_CLUSTER="$(echo "${ECS_SERVICE}" | awk -F/ '{print $(NF-1)}')"
+              echo "Derived ECS_CLUSTER='${ECS_CLUSTER}' from ECS_SERVICE ARN."
+            fi
+          fi
+
+          if [ -z "${ECS_CLUSTER:-}" ]; then
+            echo "ECS_CLUSTER is required (set vars.ECS_CLUSTER to cluster name or ARN), or provide ECS_SERVICE as a service ARN so it can be derived." >&2
+            exit 1
+          fi
+
+          apk add --no-cache aws-cli jq
+
+          echo "Deploying image: ${IMAGE}"
+
+          TASK_DEF_ARN="$(aws ecs describe-services \
+            --cluster "${ECS_CLUSTER}" \
+            --services "${ECS_SERVICE}" \
+            --query 'services[0].taskDefinition' \
+            --output text)"
+
+          if [ -z "${TASK_DEF_ARN}" ] || [ "${TASK_DEF_ARN}" = "None" ]; then
+            echo "Could not resolve current task definition from ECS service '${ECS_SERVICE}' in cluster '${ECS_CLUSTER}'." >&2
+            exit 1
+          fi
+
+          aws ecs describe-task-definition \
+            --task-definition "${TASK_DEF_ARN}" \
+            --query taskDefinition \
+            --output json > taskdef.json
+
+          if [ -z "${ECS_CONTAINER_NAME:-}" ]; then
+            CONTAINER_COUNT="$(jq '.containerDefinitions | length' taskdef.json)"
+            # First try: pick the container whose existing image matches the repository prefix of IMAGE.
+            # This lets us avoid setting ECS_CONTAINER_NAME even when there are sidecars.
+            IMAGE_BASE="$(echo "${IMAGE}" | sed -E 's/(@sha256:.*|:[^/]+)$//')"
+            MATCH_COUNT="$(jq -r --arg base "${IMAGE_BASE}" '[.containerDefinitions[] | select(.image | startswith($base))] | length' taskdef.json)"
+
+            if [ "${MATCH_COUNT}" -eq 1 ]; then
+              ECS_CONTAINER_NAME="$(jq -r --arg base "${IMAGE_BASE}" '.containerDefinitions[] | select(.image | startswith($base)) | .name' taskdef.json)"
+              echo "Auto-selected ECS_CONTAINER_NAME='${ECS_CONTAINER_NAME}' (matched image base '${IMAGE_BASE}')."
+            elif [ "${CONTAINER_COUNT}" -eq 1 ]; then
+              ECS_CONTAINER_NAME="$(jq -r '.containerDefinitions[0].name' taskdef.json)"
+              echo "Auto-selected ECS_CONTAINER_NAME='${ECS_CONTAINER_NAME}' (single container task definition)."
+            else
+              echo "ECS_CONTAINER_NAME must be set (task definition has ${CONTAINER_COUNT} containers and image match was not unique)." >&2
+              echo "Image base used for matching: ${IMAGE_BASE}" >&2
+              echo "Available containers and images:" >&2
+              jq -r '.containerDefinitions[] | "- \(.name): \(.image)"' taskdef.json >&2
+              exit 1
+            fi
+          fi
+
+          jq --arg container "${ECS_CONTAINER_NAME}" --arg image "${IMAGE}" '
+            del(
+              .taskDefinitionArn,
+              .revision,
+              .status,
+              .requiresAttributes,
+              .compatibilities,
+              .registeredAt,
+              .registeredBy
+            )
+            | .containerDefinitions |= (map(if .name == $container then .image = $image else . end))
+          ' taskdef.json > taskdef.new.json
+
+          if [ "$(jq -r --arg container "${ECS_CONTAINER_NAME}" '.containerDefinitions[] | select(.name == $container) | .image' taskdef.new.json)" != "${IMAGE}" ]; then
+            echo "Container '${ECS_CONTAINER_NAME}' not found in task definition '${TASK_DEF_ARN}' (or image not updated)." >&2
+            echo "Available containers:" >&2
+            jq -r '.containerDefinitions[].name' taskdef.json >&2
+            exit 1
+          fi
+
+          NEW_TASK_DEF_ARN="$(aws ecs register-task-definition \
+            --cli-input-json file://taskdef.new.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)"
+
+          echo "Registered new task definition: ${NEW_TASK_DEF_ARN}"
+
+          aws ecs update-service \
+            --cluster "${ECS_CLUSTER}" \
+            --service "${ECS_SERVICE}" \
+            --task-definition "${NEW_TASK_DEF_ARN}" \
+            --force-new-deployment > /dev/null
+
+          aws ecs wait services-stable \
+            --cluster "${ECS_CLUSTER}" \
+            --services "${ECS_SERVICE}"
+
+          echo "ECS service is stable."
