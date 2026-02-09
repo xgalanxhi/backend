@@ -1,10 +1,12 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timedelta
 import os
+import time
 import jwt
 import uuid
 import psycopg
@@ -33,11 +35,42 @@ if not DATABASE_URL:
 security = HTTPBearer()
 
 
+@app.exception_handler(psycopg.OperationalError)
+def psycopg_operational_error_handler(
+    request: Request, exc: psycopg.OperationalError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": "Database unavailable; please retry"},
+    )
+
+
 def get_db_connection() -> psycopg.Connection:
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 
+def wait_for_db(max_seconds: int = 60) -> None:
+    start = time.monotonic()
+    delay = 1.0
+    last_err: Exception | None = None
+
+    while time.monotonic() - start < max_seconds:
+        try:
+            conn = get_db_connection()
+            conn.close()
+            return
+        except psycopg.OperationalError as err:
+            last_err = err
+            print(f"DB not ready yet ({err}); retrying in {delay:.1f}s")
+            time.sleep(delay)
+            delay = min(5.0, delay * 1.5)
+
+    raise RuntimeError(f"Database not reachable after {max_seconds}s") from last_err
+
+
 def init_db() -> None:
+    wait_for_db(max_seconds=int(os.getenv("DB_CONNECT_MAX_SECONDS", "60")))
+
     conn = get_db_connection()
     try:
         conn.execute(
