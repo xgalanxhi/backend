@@ -28,7 +28,7 @@ jobs:
         kind: build
         with:
           context: backend
-          dockerfile: backend/Dockerfile
+          dockerfile: Dockerfile
           destination: ${{ vars.DOCKER_REGISTRY }}/${{ vars.DOCKERHUB_REPO }}:${{ cloudbees.version }}
       - name: Print pushed artifact ID
         uses: docker://alpine:latest
