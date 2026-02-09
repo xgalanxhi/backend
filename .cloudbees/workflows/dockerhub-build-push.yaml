@@ -1,0 +1,44 @@
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: workflow
+name: dockerhub-build-push
+
+on:
+  push:
+    branches:
+      - "*"
+
+permissions:
+  scm-token-own: read
+  scm-token-org: read
+  id-token: read
+
+jobs:
+  build-and-push:
+    steps:
+      - name: Check out
+        uses: cloudbees-io/checkout@v1
+
+      - name: Configure DockerHub credentials
+        id: dockerconfig
+        uses: cloudbees-io/configure-oci-credentials@v1
+        with:
+          registry: ${{ vars.DOCKER_REGISTRY }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push image (Kaniko)
+        id: kaniko-build
+        uses: cloudbees-io/kaniko@v1
+        kind: build
+        with:
+          context: backend
+          dockerfile: backend/Dockerfile
+          destination: ${{ vars.DOCKER_REGISTRY }}/${{ vars.DOCKERHUB_REPO }}:${{ cloudbees.version }}
+
+      - name: Print pushed artifact ID
+        uses: docker://alpine:latest
+        shell: sh
+        env:
+          DESTINATION: "${{ vars.DOCKER_REGISTRY }}/${{ vars.DOCKERHUB_REPO }}:${{ cloudbees.version }}"
+        run: |
+          echo "artifact ID for '${DESTINATION}': ${{ fromJSON(steps.kaniko-build.outputs.artifact-ids)[env.DESTINATION] }}"
