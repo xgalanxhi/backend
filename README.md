@@ -75,6 +75,7 @@ Once running, visit:
 
 - `SECRET_KEY` - JWT secret key (change in production)
 - `ALGORITHM` - JWT algorithm (default: HS256)
+- `DATABASE_URL` - Postgres connection string, e.g. `postgresql://postgres:postgres@db:5432/todo`
 
 ## Notes
 
