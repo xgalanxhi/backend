@@ -89,11 +89,17 @@ def init_db() -> None:
               title TEXT NOT NULL,
               description TEXT,
               completed BOOLEAN NOT NULL,
+              priority TEXT,
+              due_date TEXT,
               created_at TEXT NOT NULL,
               user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
             )
             """
         )
+
+        # Lightweight migrations for new optional fields
+        conn.execute("ALTER TABLE todos ADD COLUMN IF NOT EXISTS priority TEXT")
+        conn.execute("ALTER TABLE todos ADD COLUMN IF NOT EXISTS due_date TEXT")
 
         # Seed default user if missing
         existing = conn.execute(
@@ -139,17 +145,23 @@ class Token(BaseModel):
 class TodoCreate(BaseModel):
     title: str
     description: Optional[str] = None
+    priority: Optional[str] = None
+    due_date: Optional[str] = None
 
 class TodoUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     completed: Optional[bool] = None
+    priority: Optional[str] = None
+    due_date: Optional[str] = None
 
 class Todo(BaseModel):
     id: str
     title: str
     description: Optional[str] = None
     completed: bool
+    priority: Optional[str] = None
+    due_date: Optional[str] = None
     created_at: str
     user_id: str
 
@@ -229,7 +241,7 @@ def get_todos(
             where += " AND completed = true"
 
         rows = conn.execute(
-            f"SELECT id, title, description, completed, created_at, user_id FROM todos {where} ORDER BY created_at DESC",
+            f"SELECT id, title, description, completed, priority, due_date, created_at, user_id FROM todos {where} ORDER BY created_at DESC",
             tuple(params),
         ).fetchall()
 
@@ -239,6 +251,8 @@ def get_todos(
                 "title": r["title"],
                 "description": r["description"],
                 "completed": bool(r["completed"]),
+                "priority": r.get("priority"),
+                "due_date": r.get("due_date"),
                 "created_at": r["created_at"],
                 "user_id": r["user_id"],
             }
@@ -259,12 +273,15 @@ def create_todo(
         todo_id = str(uuid.uuid4())
         created_at = datetime.utcnow().isoformat()
 
+        priority = (todo.priority or "").strip() or None
+        due_date = (todo.due_date or "").strip() or None
+
         conn.execute(
             """
-            INSERT INTO todos (id, title, description, completed, created_at, user_id)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO todos (id, title, description, completed, priority, due_date, created_at, user_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            (todo_id, todo.title, todo.description, False, created_at, user_id),
+            (todo_id, todo.title, todo.description, False, priority, due_date, created_at, user_id),
         )
         conn.commit()
 
@@ -273,6 +290,8 @@ def create_todo(
             "title": todo.title,
             "description": todo.description,
             "completed": False,
+            "priority": priority,
+            "due_date": due_date,
             "created_at": created_at,
             "user_id": user_id,
         }
@@ -290,7 +309,7 @@ def get_todo(
         user_id = user_row["id"]
 
         row = conn.execute(
-            "SELECT id, title, description, completed, created_at, user_id FROM todos WHERE id = %s",
+            "SELECT id, title, description, completed, priority, due_date, created_at, user_id FROM todos WHERE id = %s",
             (todo_id,),
         ).fetchone()
         if row is None:
@@ -303,6 +322,8 @@ def get_todo(
             "title": row["title"],
             "description": row["description"],
             "completed": bool(row["completed"]),
+            "priority": row.get("priority"),
+            "due_date": row.get("due_date"),
             "created_at": row["created_at"],
             "user_id": row["user_id"],
         }
@@ -331,15 +352,24 @@ def update_todo(
 
         fields = []
         params: list = []
-        if todo_update.title is not None:
+
+        provided = getattr(todo_update, "model_fields_set", set())
+
+        if "title" in provided:
             fields.append("title = %s")
             params.append(todo_update.title)
-        if todo_update.description is not None:
+        if "description" in provided:
             fields.append("description = %s")
             params.append(todo_update.description)
-        if todo_update.completed is not None:
+        if "completed" in provided:
             fields.append("completed = %s")
             params.append(bool(todo_update.completed))
+        if "priority" in provided:
+            fields.append("priority = %s")
+            params.append((todo_update.priority or "").strip() or None)
+        if "due_date" in provided:
+            fields.append("due_date = %s")
+            params.append((todo_update.due_date or "").strip() or None)
 
         if fields:
             params.append(todo_id)
@@ -350,7 +380,7 @@ def update_todo(
             conn.commit()
 
         row = conn.execute(
-            "SELECT id, title, description, completed, created_at, user_id FROM todos WHERE id = %s",
+            "SELECT id, title, description, completed, priority, due_date, created_at, user_id FROM todos WHERE id = %s",
             (todo_id,),
         ).fetchone()
         return {
@@ -358,6 +388,8 @@ def update_todo(
             "title": row["title"],
             "description": row["description"],
             "completed": bool(row["completed"]),
+            "priority": row.get("priority"),
+            "due_date": row.get("due_date"),
             "created_at": row["created_at"],
             "user_id": row["user_id"],
         }
