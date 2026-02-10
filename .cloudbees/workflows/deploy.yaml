@@ -1,6 +1,6 @@
 apiVersion: automation.cloudbees.io/v1alpha1
 kind: workflow
-name: deploy-backend-to-ecs
+name: deploy
 
 on:
   workflow_call:
@@ -11,6 +11,7 @@ on:
       artifact-id:
         type: string
         required: true
+
 
 permissions:
   id-token: read
