@@ -109,5 +109,12 @@ jobs:
             --force-new-deployment \
             >/dev/null
 
+
           aws ecs wait services-stable --cluster "$CLUSTER_NAME" --services "$SERVICE_NAME"
           echo "Deployment complete. Service is stable on: $NEW_TASK_DEF_ARN"
+
+      - name: Register deployed artifact
+        uses: cloudbees-io/register-deployed-artifact@v2
+        with:
+          artifact-id: ${{ inputs.artifact-id }}
+          target-environment: ${{ inputs.environment }}
