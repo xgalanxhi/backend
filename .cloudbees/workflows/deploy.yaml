@@ -3,23 +3,6 @@ kind: workflow
 name: deploy
 
 on:
-  workflow_dispatch:
-    inputs:
-      environment:
-        type: string
-        required: true
-      artifact-id:
-        type: string
-        required: true
-    secrets:
-      AWS_ACCESS_KEY_ID:
-        required: true
-      AWS_SECRET_ACCESS_KEY:
-        required: true
-      AWS_SESSION_TOKEN:
-        required: false
-      DOCKER_USERNAME:
-        required: true
   workflow_call:
     inputs:
       environment:
