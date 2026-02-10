@@ -1,0 +1,109 @@
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: workflow
+name: deploy-backend-to-ecs
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      artifact-id:
+        type: string
+        required: true
+
+permissions:
+  id-token: read
+  scm-token-own: read
+  scm-token-org: read
+
+jobs:
+  deploy:
+    steps:
+      - name: Deploy to ECS service (new task definition revision)
+        uses: docker://amazon/aws-cli:2.33.18
+        shell: sh
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_REGION }}
+          ECS_BACKEND_SERVICE_ARN: ${{ vars.ECS_BACKEND_SERVICE_ARN }}
+          BACKEND_IMAGE: ${{ vars.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ vars.DOCKERHUB_REPO }}:${{ inputs.artifact-id }}
+        run: |
+          set -eu
+
+          : "${AWS_DEFAULT_REGION:?Set vars.AWS_REGION}"
+          : "${ECS_BACKEND_SERVICE_ARN:?Set vars.ECS_BACKEND_SERVICE_ARN}"
+          : "${BACKEND_IMAGE:?BACKEND_IMAGE env is required}"
+
+          CLUSTER_NAME="$(echo "$ECS_BACKEND_SERVICE_ARN" | awk -F'/' '{print $(NF-1)}')"
+          SERVICE_NAME="$(echo "$ECS_BACKEND_SERVICE_ARN" | awk -F'/' '{print $NF}')"
+
+          echo "Deploying image: $BACKEND_IMAGE"
+          echo "Target ECS cluster: $CLUSTER_NAME"
+          echo "Target ECS service: $SERVICE_NAME"
+
+          yum -y -q install jq >/dev/null
+
+          TASK_DEF_ARN="$(aws ecs describe-services \
+            --cluster "$CLUSTER_NAME" \
+            --services "$SERVICE_NAME" \
+            --query 'services[0].taskDefinition' \
+            --output text)"
+
+          if [ -z "$TASK_DEF_ARN" ] || [ "$TASK_DEF_ARN" = "None" ]; then
+            echo "ERROR: Could not determine task definition for service $SERVICE_NAME" >&2
+            exit 1
+          fi
+
+          TD_JSON="$(aws ecs describe-task-definition --task-definition "$TASK_DEF_ARN" --query 'taskDefinition' --output json)"
+
+          CONTAINER_COUNT="$(echo "$TD_JSON" | jq '.containerDefinitions | length')"
+          if [ "$CONTAINER_COUNT" -ne 1 ]; then
+            echo "ERROR: Task definition has multiple containers. This workflow expects a single-container task definition." >&2
+            echo "Containers:" >&2
+            echo "$TD_JSON" | jq -r '.containerDefinitions[].name' >&2
+            exit 1
+          fi
+
+          CONTAINER_NAME="$(echo "$TD_JSON" | jq -r '.containerDefinitions[0].name')"
+          echo "Updating container '$CONTAINER_NAME' in task definition '$TASK_DEF_ARN'"
+
+          echo "$TD_JSON" | jq \
+            --arg cname "$CONTAINER_NAME" \
+            --arg image "$BACKEND_IMAGE" \
+            'del(
+              .taskDefinitionArn,
+              .revision,
+              .status,
+              .requiresAttributes,
+              .compatibilities,
+              .registeredAt,
+              .registeredBy
+            )
+            | .containerDefinitions = (
+                .containerDefinitions
+                | map(if .name == $cname then .image = $image else . end)
+              )' \
+            > new-task-def.json
+
+          NEW_TASK_DEF_ARN="$(aws ecs register-task-definition \
+            --cli-input-json file://new-task-def.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)"
+
+          if [ -z "$NEW_TASK_DEF_ARN" ] || [ "$NEW_TASK_DEF_ARN" = "None" ]; then
+            echo "ERROR: Failed to register new task definition" >&2
+            exit 1
+          fi
+
+          aws ecs update-service \
+            --cluster "$CLUSTER_NAME" \
+            --service "$SERVICE_NAME" \
+            --task-definition "$NEW_TASK_DEF_ARN" \
+            --force-new-deployment \
+            >/dev/null
+
+          aws ecs wait services-stable --cluster "$CLUSTER_NAME" --services "$SERVICE_NAME"
+          echo "Deployment complete. Service is stable on: $NEW_TASK_DEF_ARN"
