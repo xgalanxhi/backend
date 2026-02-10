@@ -19,15 +19,6 @@ on:
       artifact-id:
         type: string
         required: true
-    secrets:
-      AWS_ACCESS_KEY_ID:
-        required: true
-      AWS_SECRET_ACCESS_KEY:
-        required: true
-      AWS_SESSION_TOKEN:
-        required: false
-      DOCKER_USERNAME:
-        required: true
 
 
 permissions:
@@ -37,6 +28,7 @@ permissions:
 
 jobs:
   deploy:
+    environment: ${{ inputs.environment }}
     steps:
       - name: Deploy to ECS service (new task definition revision)
         uses: docker://amazon/aws-cli:2.33.18
