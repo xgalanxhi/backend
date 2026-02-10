@@ -3,6 +3,14 @@ kind: workflow
 name: deploy
 
 on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: string
+        required: true
+      artifact-id:
+        type: string
+        required: true
   workflow_call:
     inputs:
       environment:
