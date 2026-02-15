@@ -42,7 +42,6 @@ jobs:
           CLUSTER_NAME="$(echo "$ECS_BACKEND_SERVICE_ARN" | awk -F'/' '{print $(NF-1)}')"
           SERVICE_NAME="$(echo "$ECS_BACKEND_SERVICE_ARN" | awk -F'/' '{print $NF}')"
 
-          exit 0
 
           echo "Deploying image: $BACKEND_IMAGE"
           echo "Target ECS cluster: $CLUSTER_NAME"
