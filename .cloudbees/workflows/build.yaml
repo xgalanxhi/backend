@@ -63,7 +63,7 @@ jobs:
             echo "$ARTIFACT_IDS" | jq .
             exit 1
           fi
-          echo "$ARTIFACT_ID" > $CLOUDBEES_OUTPUTS/extract-artifact-id
+          printf "%s" "$ARTIFACT_ID" > $CLOUDBEES_OUTPUTS/extract-artifact-id
 
       - name: Publish build evidence
         uses: cloudbees-io/publish-evidence-item@v1
