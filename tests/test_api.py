@@ -120,7 +120,7 @@ def test_create_todo(client, auth_token, mock_db_connection):
         json=todo_data,
         headers={"Authorization": f"Bearer {auth_token}"}
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
     data = response.json()
     assert data["title"] == todo_data["title"]
     assert data["description"] == todo_data["description"]
@@ -133,14 +133,15 @@ def test_update_todo(client, auth_token, mock_db_connection):
     # Mock the database responses
     mock_cursor = mock_db_connection.execute.return_value
 
-    # Mock user lookup and todo fetch for each request
+    # Mock user lookup, todo check, and final todo fetch
     mock_cursor.fetchone.side_effect = [
-        {"id": "1", "username": "admin", "password": "admin123"},  # User for update
-        {  # Existing todo
+        {"id": "1", "username": "admin", "password": "admin123"},  # User lookup
+        {"id": "todo-1", "user_id": "1"},  # Existing todo check
+        {  # Final todo after update
             "id": "todo-1",
-            "title": "Original Title",
-            "description": None,
-            "completed": False,
+            "title": "Updated Title",
+            "description": "Updated description",
+            "completed": True,
             "priority": None,
             "due_date": None,
             "created_at": "2026-01-01T00:00:00Z",
@@ -189,9 +190,7 @@ def test_delete_todo(client, auth_token, mock_db_connection):
         "/api/todos/todo-1",
         headers={"Authorization": f"Bearer {auth_token}"}
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert "message" in data
+    assert response.status_code == 204
 
 
 def test_get_todos_with_filter_active(client, auth_token, mock_db_connection):
