@@ -21,29 +21,6 @@ permissions:
 jobs:
   deploy:
     steps:
-      - name: Extract version from manifest
-        id: extract-version
-        uses: docker://alpine:latest
-        shell: sh
-        env:
-          MANIFEST: ${{ cloudbees.manifest }}
-          IMAGE_NAME: ${{ vars.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ vars.DOCKERHUB_REPO }}
-        run: |
-          apk add --no-cache jq
-
-          # Extract version from manifest for this component's image
-          VERSION=$(echo "$MANIFEST" | jq -r ".backend.\"$IMAGE_NAME\".version // empty")
-
-          # Fallback to cloudbees.version if not in manifest
-          if [ -z "$VERSION" ]; then
-            VERSION="${{ cloudbees.version }}"
-            echo "Version not found in manifest, using cloudbees.version: $VERSION"
-          else
-            echo "Extracted version from manifest: $VERSION"
-          fi
-
-          printf "%s" "$VERSION" > $CLOUDBEES_OUTPUTS/extract-version
-
       - name: Deploy to ECS service (new task definition revision)
         uses: docker://amazon/aws-cli:2.33.18
         shell: sh
@@ -53,7 +30,7 @@ jobs:
           AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN || '' }}
           AWS_DEFAULT_REGION: ${{ vars.AWS_REGION }}
           ECS_BACKEND_SERVICE_ARN: ${{ vars.ECS_BACKEND_SERVICE_ARN }}
-          BACKEND_IMAGE: ${{ vars.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ vars.DOCKERHUB_REPO }}:${{ steps.extract-version.outputs.extract-version }}
+          BACKEND_IMAGE: ${{ vars.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ vars.DOCKERHUB_REPO }}:${{ cloudbees.version }}
         run: |
           set -eu
 
@@ -168,5 +145,5 @@ jobs:
             **Artifact ID**: `${{ inputs.artifact-id }}`
             **ECS Service**: `${{ vars.ECS_BACKEND_SERVICE_ARN }}`
             **AWS Region**: `${{ vars.AWS_REGION }}`
-            **Image**: `${{ vars.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ vars.DOCKERHUB_REPO }}:${{ steps.extract-version.outputs.extract-version }}`
+            **Image**: `${{ vars.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ vars.DOCKERHUB_REPO }}:${{ cloudbees.version }}`
             **Status**: Deployment complete, service is stable
