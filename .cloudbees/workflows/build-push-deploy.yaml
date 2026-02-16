@@ -1,6 +1,6 @@
 apiVersion: automation.cloudbees.io/v1alpha1
 kind: workflow
-name: build-push-deploy-backend
+name: build-push-deploy
 
 on:
   workflow_dispatch:

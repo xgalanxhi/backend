@@ -1,9 +1,15 @@
 apiVersion: automation.cloudbees.io/v1alpha1
 kind: workflow
-name: build-push-backend
+name: build-push
 
 on:
   workflow_dispatch:
+  workflow_call:
+    outputs:
+      artifact-id:
+        value: ${{ jobs.build.outputs.artifact-id }}
+      image:
+        value: ${{ jobs.build.outputs.image }}
 
 permissions:
   scm-token-own: read

@@ -1,6 +1,6 @@
 apiVersion: automation.cloudbees.io/v1alpha1
 kind: workflow
-name: test-backend
+name: test
 on:
   workflow_dispatch:
   workflow_call:
@@ -72,3 +72,10 @@ jobs:
         run: |
           cd source
           launchable record tests --session $(cat launchable-session.txt) pytest test-results/
+
+      - name: Publish test results
+        if: always()
+        uses: cloudbees-io/publish-test-results@v1
+        with:
+          test-results-file: source/test-results/junit.xml
+          test-results-format: JUNIT
