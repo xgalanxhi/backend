@@ -30,5 +30,3 @@ jobs:
     with:
       environment: DEV
       artifact-id: ${{ needs.build.outputs.artifact-id }}
-      version: ${{ needs.build.outputs.version }}
-      image: ${{ needs.build.outputs.image }}
