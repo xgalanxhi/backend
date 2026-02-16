@@ -1,0 +1,23 @@
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: workflow
+name: build-push-backend
+
+on:
+  workflow_dispatch:
+
+permissions:
+  scm-token-own: read
+  scm-token-org: read
+  id-token: read
+
+jobs:
+  test:
+    uses: ./.cloudbees/workflows/test.yaml
+    vars: inherit
+    secrets: inherit
+
+  build:
+    needs: test
+    uses: ./.cloudbees/workflows/build.yaml
+    vars: inherit
+    secrets: inherit
