@@ -23,6 +23,7 @@ jobs:
           LAUNCHABLE_TOKEN: ${{ secrets.SMART_TESTS_KEY }}
         run: |
           cd source
+          git config --global --add safe.directory /cloudbees/workspace/source
           launchable record build --name ${CLOUDBEES_RUN_ID} --source=src=.
 
       - name: Create test session
