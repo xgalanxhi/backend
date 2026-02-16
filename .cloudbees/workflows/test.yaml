@@ -22,7 +22,7 @@ jobs:
           LAUNCHABLE_TOKEN: ${{ secrets.SMART_TESTS_KEY }}
         run: |
           cd source
-          launchable record build --name ${CLOUDBEES_RUN_ID} --source .
+          launchable record build --name ${CLOUDBEES_RUN_ID}
 
       - name: Run tests
         uses: docker://python:3.11-slim
