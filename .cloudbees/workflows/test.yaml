@@ -75,7 +75,7 @@ jobs:
 
       - name: Publish test results
         if: always()
-        uses: cloudbees-io/publish-test-results@v1
+        uses: cloudbees-io/publish-test-results@v2
         with:
-          test-results-file: source/test-results/junit.xml
-          test-results-format: JUNIT
+          test-type: JUNIT
+          results-path: source/test-results/junit.xml
