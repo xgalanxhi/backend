@@ -8,6 +8,8 @@ on:
     outputs:
       artifact-id:
         value: ${{ jobs.build.outputs.artifact-id }}
+      version:
+        value: ${{ jobs.build.outputs.version }}
       image:
         value: ${{ jobs.build.outputs.image }}
 
