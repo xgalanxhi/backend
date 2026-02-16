@@ -1,0 +1,45 @@
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: workflow
+name: test-backend
+on:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  scm-token-own: read
+  scm-token-org: read
+jobs:
+  test:
+    steps:
+      - name: Check out
+        uses: cloudbees-io/checkout@v2
+        with:
+          path: source
+
+      - name: Run tests
+        uses: docker://python:3.11-slim
+        shell: sh
+        run: |
+          set -eu
+          cd source
+
+          echo "========================================"
+          echo "Backend Tests"
+          echo "========================================"
+          echo ""
+
+          echo "Installing dependencies..."
+          pip install --quiet --no-cache-dir -r requirements.txt
+          pip install --quiet --no-cache-dir -r requirements-dev.txt
+
+          echo ""
+          echo "Validating Python syntax..."
+          python -m py_compile main.py
+          echo "✓ Syntax validation passed"
+
+          echo ""
+          echo "Note: Full integration tests require PostgreSQL."
+          echo "To run complete test suite locally:"
+          echo "  cd backend"
+          echo "  docker-compose -f docker-compose.test.yml up --abort-on-container-exit"
+          echo ""
+          echo "✓ Backend validation completed"

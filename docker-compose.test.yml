@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: todo_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d todo_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/todo_test
+      SECRET_KEY: test-secret-key
+      ALGORITHM: HS256
+      DB_CONNECT_MAX_SECONDS: 30
+    command: >
+      sh -c "
+        echo 'Installing test dependencies...' &&
+        pip install --quiet -r requirements-dev.txt &&
+        echo 'Running tests...' &&
+        pytest -v --cov=. --cov-report=term-missing --cov-report=xml --cov-report=html &&
+        echo 'Tests completed successfully!'
+      "

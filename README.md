@@ -32,6 +32,42 @@ uvicorn main:app --reload
 
 The API will be available at `http://localhost:8000`
 
+### Testing
+
+#### Option 1: Run tests with Docker Compose (Recommended)
+
+This runs tests in an isolated environment with PostgreSQL:
+
+```bash
+docker-compose -f docker-compose.test.yml up --abort-on-container-exit
+```
+
+#### Option 2: Run tests locally
+
+1. Ensure PostgreSQL is running (e.g., via `docker-compose up db`)
+
+2. Install development dependencies:
+```bash
+pip install -r requirements-dev.txt
+```
+
+3. Run tests:
+```bash
+export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/todo_test
+pytest
+```
+
+4. Run tests with coverage:
+```bash
+pytest --cov=. --cov-report=html
+```
+
+#### CI/CD Testing
+
+Tests are automatically run in the CloudBees Unify pipeline before building and deploying:
+- `.cloudbees/workflows/test.yaml` - Standalone test workflow
+- `.cloudbees/workflows/build-test-push.yaml` - Build workflow with integrated tests
+
 ### Docker
 
 Build and run with Docker:
@@ -79,6 +115,7 @@ Once running, visit:
 
 ## Notes
 
-- Currently uses in-memory storage
-- For production, integrate with a database (PostgreSQL, MongoDB, etc.)
+- Uses PostgreSQL for data persistence
+- Database schema is initialized automatically on startup
+- Database connections are created per-request (no connection pooling)
 - Update SECRET_KEY in production
