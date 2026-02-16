@@ -14,6 +14,7 @@ jobs:
         uses: cloudbees-io/checkout@v2
         with:
           path: source
+          fetch-depth: 0
 
       - name: Record build with Launchable
         uses: docker://cloudbees/launchable:v1.120.0
@@ -22,7 +23,17 @@ jobs:
           LAUNCHABLE_TOKEN: ${{ secrets.SMART_TESTS_KEY }}
         run: |
           cd source
-          launchable record build --name ${CLOUDBEES_RUN_ID}
+          launchable record build --name ${CLOUDBEES_RUN_ID} --source src=.
+
+      - name: Create test session
+        uses: docker://cloudbees/launchable:v1.120.0
+        shell: sh
+        env:
+          LAUNCHABLE_TOKEN: ${{ secrets.SMART_TESTS_KEY }}
+        run: |
+          cd source
+          launchable record session --build ${CLOUDBEES_RUN_ID} --test-suite backend > launchable-session.txt
+          cat launchable-session.txt
 
       - name: Run tests
         uses: docker://python:3.11-slim
@@ -67,4 +78,4 @@ jobs:
           LAUNCHABLE_TOKEN: ${{ secrets.SMART_TESTS_KEY }}
         run: |
           cd source
-          launchable record tests --build ${CLOUDBEES_RUN_ID} pytest test-results/junit.xml
+          launchable record tests --session $(cat launchable-session.txt) pytest test-results/
