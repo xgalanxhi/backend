@@ -20,7 +20,6 @@ permissions:
 
 jobs:
   deploy:
-    environment: ${{ inputs.environment }}
     steps:
       - name: Deploy to ECS service (new task definition revision)
         uses: docker://amazon/aws-cli:2.33.18
