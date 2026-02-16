@@ -28,5 +28,5 @@ jobs:
     vars: inherit
     secrets: inherit
     with:
-      environment: production
+      environment: DEV
       artifact-id: ${{ needs.build.outputs.artifact-id }}
