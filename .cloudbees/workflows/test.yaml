@@ -15,11 +15,14 @@ jobs:
         with:
           path: source
 
-      - name: Record build with Smart Tests
-        uses: cloudbees-io/smart-tests-record-build@v1
-        with:
-          token: ${{ secrets.SMART_TESTS_KEY }}
-          flavor: backend
+      - name: Record build with Launchable
+        uses: docker://cloudbees/launchable:latest
+        shell: sh
+        env:
+          LAUNCHABLE_TOKEN: ${{ secrets.SMART_TESTS_KEY }}
+        run: |
+          cd source
+          launchable record build --name ${CLOUDBEES_RUN_ID} --source .
 
       - name: Run tests
         uses: docker://python:3.11-slim
@@ -29,7 +32,7 @@ jobs:
           cd source
 
           echo "========================================"
-          echo "Backend Tests with Smart Tests"
+          echo "Backend Tests with Launchable"
           echo "========================================"
           echo ""
 
@@ -39,7 +42,8 @@ jobs:
 
           echo ""
           echo "Running tests with JUnit output..."
-          # Run pytest with JUnit XML output for Smart Tests
+          mkdir -p test-results
+          # Run pytest with JUnit XML output for Launchable
           pytest -v \
             --junitxml=test-results/junit.xml \
             --cov=. \
@@ -55,10 +59,12 @@ jobs:
           echo ""
           echo "✓ Backend tests completed"
 
-      - name: Upload test results to Smart Tests
+      - name: Upload test results to Launchable
         if: always()
-        uses: cloudbees-io/smart-tests-record-tests@v1
-        with:
-          token: ${{ secrets.SMART_TESTS_KEY }}
-          flavor: backend
-          test-path: source/test-results/*.xml
+        uses: docker://cloudbees/launchable:latest
+        shell: sh
+        env:
+          LAUNCHABLE_TOKEN: ${{ secrets.SMART_TESTS_KEY }}
+        run: |
+          cd source
+          launchable record tests --build ${CLOUDBEES_RUN_ID} pytest test-results/junit.xml
