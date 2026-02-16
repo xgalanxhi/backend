@@ -33,7 +33,7 @@ jobs:
           LAUNCHABLE_TOKEN: ${{ secrets.SMART_TESTS_KEY }}
         run: |
           cd source
-          launchable record session --build ${CLOUDBEES_RUN_ID} --test-suite "backend-api" > launchable-session.txt
+          launchable record session --test-suite backend-api --build ${CLOUDBEES_RUN_ID} > launchable-session.txt
           cat launchable-session.txt
 
       - name: Run tests
