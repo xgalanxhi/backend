@@ -24,7 +24,8 @@ jobs:
         run: |
           cd source
           git config --global --add safe.directory /cloudbees/workspace/source
-          launchable record build --name ${CLOUDBEES_RUN_ID} --source=src=.
+          NAME=$(git rev-parse --short HEAD)
+          launchable record build --name $NAME --source=src=.
 
       - name: Create test session
         uses: docker://cloudbees/launchable:v1.120.0
@@ -33,7 +34,8 @@ jobs:
           LAUNCHABLE_TOKEN: ${{ secrets.SMART_TESTS_KEY }}
         run: |
           cd source
-          launchable record session --test-suite backend-api --build ${CLOUDBEES_RUN_ID} > launchable-session.txt
+          NAME=$(git rev-parse --short HEAD)
+          launchable record session --test-suite backend-api --build $NAME > launchable-session.txt
           cat launchable-session.txt
 
       - name: Run tests
