@@ -20,7 +20,7 @@ permissions:
 jobs:
   build-and-push:
     outputs:
-      artifact-id: ${{ steps.extract-artifact-id.outputs.artifact-id }}
+      artifact-id: ${{ steps.extract-artifact-id.outputs.extract-artifact-id }}
       version: ${{ cloudbees.version }}
       image: ${{ vars.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ vars.DOCKERHUB_REPO }}:${{ cloudbees.version }}
     steps:
@@ -55,8 +55,15 @@ jobs:
           DESTINATION: ${{ vars.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ vars.DOCKERHUB_REPO }}:${{ cloudbees.version }}
           ARTIFACT_IDS: ${{ steps.kaniko-build.outputs.artifact-ids }}
         run: |
-          ARTIFACT_ID=$(echo "$ARTIFACT_IDS" | grep -o '"[^"]*"' | sed 's/"//g' | head -1)
-          echo "artifact-id=$ARTIFACT_ID" >> $CLOUDBEES_OUTPUTS/extract-artifact-id
+          apk add --no-cache jq
+          ARTIFACT_ID=$(echo "$ARTIFACT_IDS" | jq -r ".[\"$DESTINATION\"]")
+          if [ -z "$ARTIFACT_ID" ] || [ "$ARTIFACT_ID" = "null" ]; then
+            echo "ERROR: Failed to extract artifact ID for destination: $DESTINATION"
+            echo "Available artifact IDs:"
+            echo "$ARTIFACT_IDS" | jq .
+            exit 1
+          fi
+          echo "$ARTIFACT_ID" > $CLOUDBEES_OUTPUTS/extract-artifact-id
 
       - name: Publish build evidence
         uses: cloudbees-io/publish-evidence-item@v1
@@ -66,6 +73,6 @@ jobs:
 
             **Image**: `${{ vars.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ vars.DOCKERHUB_REPO }}:${{ cloudbees.version }}`
             **Version**: `${{ cloudbees.version }}`
-            **Artifact ID**: `${{ steps.extract-artifact-id.outputs.artifact-id }}`
+            **Artifact ID**: `${{ steps.extract-artifact-id.outputs.extract-artifact-id }}`
             **Registry**: `${{ vars.DOCKER_REGISTRY }}`
             **Commit SHA**: `${{ cloudbees.scm.sha }}`
