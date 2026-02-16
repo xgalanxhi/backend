@@ -11,6 +11,9 @@ on:
       artifact-id:
         type: string
         required: true
+      version:
+        type: string
+        required: false
       image:
         type: string
         required: false
@@ -34,7 +37,7 @@ jobs:
           AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN || '' }}
           AWS_DEFAULT_REGION: ${{ vars.AWS_REGION }}
           ECS_BACKEND_SERVICE_ARN: ${{ vars.ECS_BACKEND_SERVICE_ARN }}
-          BACKEND_IMAGE: ${{ inputs.image || format('{0}/{1}/{2}:{3}', vars.DOCKER_REGISTRY, secrets.DOCKER_USERNAME, vars.DOCKERHUB_REPO, inputs.artifact-id) }}
+          BACKEND_IMAGE: ${{ inputs.image || format('{0}/{1}/{2}:{3}', vars.DOCKER_REGISTRY, secrets.DOCKER_USERNAME, vars.DOCKERHUB_REPO, inputs.version) }}
         run: |
           set -eu
 
@@ -42,9 +45,21 @@ jobs:
           : "${ECS_BACKEND_SERVICE_ARN:?Set vars.ECS_BACKEND_SERVICE_ARN}"
           : "${BACKEND_IMAGE:?BACKEND_IMAGE env is required}"
 
+          # Trim whitespace and validate image format
+          BACKEND_IMAGE="$(echo "$BACKEND_IMAGE" | tr -d '[:space:]')"
+
+          echo "Raw image reference: [$BACKEND_IMAGE]"
+          echo "Length: ${#BACKEND_IMAGE}"
+
+          # Validate image format (registry/user/repo:tag)
+          if ! echo "$BACKEND_IMAGE" | grep -E '^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+:[a-zA-Z0-9._-]+$' > /dev/null; then
+            echo "ERROR: Invalid image format: $BACKEND_IMAGE" >&2
+            echo "Expected format: registry/username/repository:tag" >&2
+            exit 1
+          fi
+
           CLUSTER_NAME="$(echo "$ECS_BACKEND_SERVICE_ARN" | awk -F'/' '{print $(NF-1)}')"
           SERVICE_NAME="$(echo "$ECS_BACKEND_SERVICE_ARN" | awk -F'/' '{print $NF}')"
-
 
           echo "Deploying image: $BACKEND_IMAGE"
           echo "Target ECS cluster: $CLUSTER_NAME"
@@ -94,6 +109,12 @@ jobs:
               )' \
             > new-task-def.json
 
+          echo "=== New Task Definition JSON ==="
+          cat new-task-def.json
+          echo "=== Image field in new task def ==="
+          jq -r '.containerDefinitions[0].image' new-task-def.json
+          echo "==================================="
+
           NEW_TASK_DEF_ARN="$(aws ecs register-task-definition \
             --cli-input-json file://new-task-def.json \
             --query 'taskDefinition.taskDefinitionArn' \
@@ -131,5 +152,5 @@ jobs:
             **Artifact ID**: `${{ inputs.artifact-id }}`
             **ECS Service**: `${{ vars.ECS_BACKEND_SERVICE_ARN }}`
             **AWS Region**: `${{ vars.AWS_REGION }}`
-            **Image**: `${{ vars.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ vars.DOCKERHUB_REPO }}:${{ inputs.artifact-id }}`
+            **Image**: `${{ inputs.image || format('{0}/{1}/{2}:{3}', vars.DOCKER_REGISTRY, secrets.DOCKER_USERNAME, vars.DOCKERHUB_REPO, inputs.version) }}`
             **Status**: Deployment complete, service is stable
