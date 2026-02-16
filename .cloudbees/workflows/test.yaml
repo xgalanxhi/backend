@@ -58,17 +58,7 @@ jobs:
           echo "Running tests with JUnit output..."
           mkdir -p test-results
           # Run pytest with JUnit XML output for Launchable
-          pytest -v \
-            --junitxml=test-results/junit.xml \
-            --cov=. \
-            --cov-report=term-missing \
-            --cov-report=xml \
-            --cov-report=html || true
-
-          echo ""
-          echo "Validating Python syntax..."
-          python -m py_compile main.py
-          echo "✓ Syntax validation passed"
+          pytest -v --junitxml=test-results/junit.xml
 
           echo ""
           echo "✓ Backend tests completed"
