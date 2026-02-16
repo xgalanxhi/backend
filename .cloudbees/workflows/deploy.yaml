@@ -11,6 +11,9 @@ on:
       artifact-id:
         type: string
         required: true
+      image:
+        type: string
+        required: false
 
 
 permissions:
@@ -31,7 +34,7 @@ jobs:
           AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN || '' }}
           AWS_DEFAULT_REGION: ${{ vars.AWS_REGION }}
           ECS_BACKEND_SERVICE_ARN: ${{ vars.ECS_BACKEND_SERVICE_ARN }}
-          BACKEND_IMAGE: ${{ vars.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ vars.DOCKERHUB_REPO }}:${{ inputs.artifact-id }}
+          BACKEND_IMAGE: ${{ inputs.image || format('{0}/{1}/{2}:{3}', vars.DOCKER_REGISTRY, secrets.DOCKER_USERNAME, vars.DOCKERHUB_REPO, inputs.artifact-id) }}
         run: |
           set -eu
 
