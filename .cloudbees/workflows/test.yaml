@@ -23,7 +23,7 @@ jobs:
           LAUNCHABLE_TOKEN: ${{ secrets.SMART_TESTS_KEY }}
         run: |
           cd source
-          launchable record build --name ${CLOUDBEES_RUN_ID} --source src=.
+          launchable record build --name ${CLOUDBEES_RUN_ID} --source=src=.
 
       - name: Create test session
         uses: docker://cloudbees/launchable:v1.120.0
@@ -32,7 +32,7 @@ jobs:
           LAUNCHABLE_TOKEN: ${{ secrets.SMART_TESTS_KEY }}
         run: |
           cd source
-          launchable record session --build ${CLOUDBEES_RUN_ID} --test-suite backend > launchable-session.txt
+          launchable record session --build ${CLOUDBEES_RUN_ID} --test-suite "backend-api" > launchable-session.txt
           cat launchable-session.txt
 
       - name: Run tests
