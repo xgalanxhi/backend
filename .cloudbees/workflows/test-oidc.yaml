@@ -10,61 +10,24 @@ permissions:
   scm-token-org: read
 
 jobs:
-  oidc-test:
+  build:
     permissions:
       id-token: write
       scm-token-own: read
       scm-token-org: read
 
     steps:
-      - name: Decode token claims (proves token exists)
-        uses: docker://alpine:3.20
-        env:
-          OIDC_TOKEN: ${{ cloudbees.api.token }}
-          ORG: ${{ cloudbees.organization }}
-          REPO: ${{ cloudbees.scm.repository }}
-          REF: ${{ cloudbees.scm.ref }}
+      - name: Login to AWS via OIDC
+        uses: cloudbees-io/configure-aws-credentials@v1
+        id: aws-login
+        with:
+          aws-region: us-east-1
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-duration-seconds: "3600" # optional
+
+      - name: Run AWS CLI commands
+        uses: docker://public.ecr.aws/aws-cli/aws-cli
         shell: sh
         run: |
-          set -eu
-          echo "org:  ${ORG:-<not set>}"
-          echo "repo: ${REPO:-<not set>}"
-          echo "ref:  ${REF:-<not set>}"
-
-          if [ -z "${OIDC_TOKEN:-}" ]; then
-            echo "OIDC token is empty -> check: job permissions must include id-token: write"
-            exit 2
-          fi
-
-          echo "OIDC token len=${#OIDC_TOKEN}"
-          apk add --no-cache jq
-
-          payload="$(echo "$OIDC_TOKEN" | cut -d'.' -f2)"
-          mod=$(( ${#payload} % 4 ))
-          [ $mod -eq 2 ] && payload="${payload}=="
-          [ $mod -eq 3 ] && payload="${payload}="
-          echo "$payload" | tr '_-' '/+' | base64 -d 2>/dev/null | jq . || true
-
-      - name: Assume role with web identity + sts get-caller-identity
-        uses: docker://amazon/aws-cli:2
-        env:
-          AWS_REGION: eu-west-1
-          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
-          OIDC_TOKEN: ${{ cloudbees.api.token }}
-        shell: sh
-        run: |
-          set -eu
-          test -n "${AWS_ROLE_ARN:-}" || (echo "Missing AWS_ROLE_ARN secret" && exit 2)
-
-          CREDS="$(aws sts assume-role-with-web-identity \
-            --role-arn "$AWS_ROLE_ARN" \
-            --role-session-name "cb-unify-oidc-test" \
-            --web-identity-token "$OIDC_TOKEN" \
-            --duration-seconds 900 \
-            --output json)"
-
-          export AWS_ACCESS_KEY_ID="$(echo "$CREDS" | jq -r '.Credentials.AccessKeyId')"
-          export AWS_SECRET_ACCESS_KEY="$(echo "$CREDS" | jq -r '.Credentials.SecretAccessKey')"
-          export AWS_SESSION_TOKEN="$(echo "$CREDS" | jq -r '.Credentials.SessionToken')"
-
           aws sts get-caller-identity
+          aws configure list
