@@ -5,110 +5,66 @@ name: test-oidc
 on:
   workflow_dispatch:
 
-# workflow-level permissions (fine to keep minimal here)
 permissions:
   scm-token-own: read
   scm-token-org: read
 
 jobs:
-  check-oidc:
-    # IMPORTANT: job-level permissions override workflow-level,
-    # and you must repeat the others if you set permissions here.
+  oidc-test:
     permissions:
       id-token: write
       scm-token-own: read
       scm-token-org: read
 
     steps:
-      - name: Show CloudBees context + candidate token env vars
+      - name: Decode token claims (proves token exists)
         uses: docker://alpine:3.20
+        env:
+          OIDC_TOKEN: ${{ cloudbees.api.token }}
+          ORG: ${{ cloudbees.organization }}
+          REPO: ${{ cloudbees.scm.repository }}
+          REF: ${{ cloudbees.scm.ref }}
         shell: sh
         run: |
           set -eu
+          echo "org:  ${ORG:-<not set>}"
+          echo "repo: ${REPO:-<not set>}"
+          echo "ref:  ${REF:-<not set>}"
 
-          echo "=== CloudBees context ==="
-          echo "org:        ${CLOUDBEES_ORGANIZATION:-<not set>}"
-          echo "workspace:  ${CLOUDBEES_WORKSPACE:-<not set>}"
-          echo "repo:       ${CLOUDBEES_SCM_REPOSITORY:-<not set>}"
-          echo "ref:        ${CLOUDBEES_SCM_REF:-<not set>}"
-          echo
-
-          echo "=== Env vars (filtered) ==="
-          env | grep -E '^(CLOUDBEES_|AWS_|OIDC_|JWT_)' | sort || true
-          echo
-
-          # IMPORTANT:
-          # CloudBees Unify does NOT use GitHub's ACTIONS_ID_TOKEN_* vars.
-          # We discover what it provides by inspection, then wire it into the AWS call.
-          echo "=== Looking for an OIDC token value ==="
-          OIDC_TOKEN=""
-          for v in CLOUDBEES_OIDC_TOKEN OIDC_TOKEN ID_TOKEN JWT; do
-            eval "val=\${$v:-}"
-            if [ -n "${val:-}" ]; then
-              OIDC_TOKEN="$val"
-              echo "Found token in \$$v (len=${#OIDC_TOKEN})"
-              break
-            fi
-          done
-
-          if [ -z "$OIDC_TOKEN" ]; then
-            echo "No obvious token env var found."
-            echo "Next step: check your job logs for any CloudBees-provided token variable name,"
-            echo "or confirm how Unify exposes the minted id-token in your tenant."
+          if [ -z "${OIDC_TOKEN:-}" ]; then
+            echo "OIDC token is empty -> check: job permissions must include id-token: write"
             exit 2
           fi
 
-          echo
-          echo "=== Decode JWT claims (no signature verification) ==="
+          echo "OIDC token len=${#OIDC_TOKEN}"
           apk add --no-cache jq
+
           payload="$(echo "$OIDC_TOKEN" | cut -d'.' -f2)"
-          # base64url -> base64 padding
           mod=$(( ${#payload} % 4 ))
           [ $mod -eq 2 ] && payload="${payload}=="
           [ $mod -eq 3 ] && payload="${payload}="
           echo "$payload" | tr '_-' '/+' | base64 -d 2>/dev/null | jq . || true
 
-      - name: Assume AWS role with web identity and call sts:GetCallerIdentity
-        uses: docker://amazon/aws-cli:2.15.0
-        shell: sh
+      - name: Assume role with web identity + sts get-caller-identity
+        uses: docker://amazon/aws-cli:2
         env:
           AWS_REGION: eu-west-1
           AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+          OIDC_TOKEN: ${{ cloudbees.api.token }}
+        shell: sh
         run: |
           set -eu
+          test -n "${AWS_ROLE_ARN:-}" || (echo "Missing AWS_ROLE_ARN secret" && exit 2)
 
-          # Same token discovery logic as previous step (keep in sync)
-          OIDC_TOKEN=""
-          for v in CLOUDBEES_OIDC_TOKEN OIDC_TOKEN ID_TOKEN JWT; do
-            eval "val=\${$v:-}"
-            if [ -n "${val:-}" ]; then
-              OIDC_TOKEN="$val"
-              break
-            fi
-          done
-
-          if [ -z "$OIDC_TOKEN" ]; then
-            echo "Missing OIDC token in environment; cannot test AWS STS."
-            exit 2
-          fi
-
-          if [ -z "${AWS_ROLE_ARN:-}" ]; then
-            echo "Missing AWS_ROLE_ARN secret."
-            exit 2
-          fi
-
-          echo "Calling STS AssumeRoleWithWebIdentity..."
           CREDS="$(aws sts assume-role-with-web-identity \
             --role-arn "$AWS_ROLE_ARN" \
             --role-session-name "cb-unify-oidc-test" \
             --web-identity-token "$OIDC_TOKEN" \
             --duration-seconds 900 \
-            --query 'Credentials' \
             --output json)"
 
-          export AWS_ACCESS_KEY_ID="$(echo "$CREDS" | jq -r .AccessKeyId)"
-          export AWS_SECRET_ACCESS_KEY="$(echo "$CREDS" | jq -r .SecretAccessKey)"
-          export AWS_SESSION_TOKEN="$(echo "$CREDS" | jq -r .SessionToken)"
+          export AWS_ACCESS_KEY_ID="$(echo "$CREDS" | jq -r '.Credentials.AccessKeyId')"
+          export AWS_SECRET_ACCESS_KEY="$(echo "$CREDS" | jq -r '.Credentials.SecretAccessKey')"
+          export AWS_SESSION_TOKEN="$(echo "$CREDS" | jq -r '.Credentials.SessionToken')"
 
-          echo "Success. Verifying with sts get-caller-identity:"
           aws sts get-caller-identity
